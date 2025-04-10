@@ -1,0 +1,69 @@
+#!/bin/bash
+
+DEFAULT_SEFF=/usr/bin/seff
+
+# Run seff like one would normally do
+$DEFAULT_SEFF "${@}"
+SEFF_RETURN=$?
+
+# Only run the hook if seff found the job
+# and returned 0
+if [[ $SEFF_RETURN -eq 0 ]]; then
+
+    DEBUG=1
+    JOB_ID=0
+
+    # Parse seff arguments
+    while [[ $# -gt 0 ]]
+    do
+        case $1 in
+            -d)
+                DEBUG=0
+                shift
+                ;;
+            -h|-v)
+                shift
+                ;;
+            *)
+                JOB_ID=$1
+                shift
+                ;;
+        esac
+    done
+
+    # If given a job ID without job step,
+    # use batch ID instead
+    JOBID_PATTERN="^[0-9]+$"
+
+    if [[ $JOB_ID =~ $JOBID_PATTERN ]]
+    then
+        JOB_ID=${JOB_ID}.batch
+    fi
+
+    # Get monitoring data
+    GPU_USAGE=$(sacct -n -p -o AllocTres,TresUsageInAve -j $JOB_ID)
+
+    # Parse various quantities from the data
+    GPU_TYPE=$(echo $GPU_USAGE | sed -n "s%.*gres/gpu:\([a-zA-Z0-9]\+\).*%\1%p")
+    GPU_COUNT=$(echo $GPU_USAGE | sed -n "s%.*gres/gpu:${GPU_TYPE}=\([0-9]\+\).*%\1%p")
+    GPU_UTIL=$(echo $GPU_USAGE | sed -n "s%.*gres/gpuutil=\([0-9]\+\).*%\1%p")
+    GPU_MEM=$(echo $GPU_USAGE | sed -n "s%.*gres/gpumem=\([0-9]\+\).*%\1%p")
+
+    # Only print output if data was found
+    if [[ $DEBUG -eq 0 ]]
+    then
+        echo "GPU data from Slurm: $GPU_USAGE"
+    fi
+    if [[ ! -z $GPU_COUNT ]]
+    then
+        echo "GPUs reserved: $GPU_TYPE (x$GPU_COUNT)"
+    fi
+    if [[ ! -z $GPU_UTIL ]]
+    then
+        echo "GPU Utilized: ${GPU_UTIL}%"
+    fi
+    if [[ ! -z $GPU_COUNT ]]
+    then
+        echo "GPU VRAM Utilized: ${GPU_MEM} MB"
+    fi
+fi
